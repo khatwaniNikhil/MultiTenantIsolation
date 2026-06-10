@@ -1,3 +1,70 @@
+# Context - The Tenant Who Broke Everyone Else
+
+Multi-tenant isolation, workload scheduling, and resource governance
+
+This assessment is self-contained. Treat every ambiguity as part of the problem you are being assessed on.
+ 
+- Sections A — Incident and failure analysis: Identify design failures; diagnose the architecture
+Q1 – Q2: 10 min
+
+- Section B — System design: Design isolation, scheduling, and detection mechanisms
+Q3 – Q5: 22 min
+
+- Section C — Constraints and trade-offs: Reason about scope, cost, and prioritisation
+Q6 – Q7: 8 min
+ 
+## Rules
+- Open book — reference material, internet, and AI tooling all permitted.
+- Do not request clarification. Ambiguity is intentional.
+- Every question must be answered. Partial answers are accepted; blank answers are not.
+- Write for a technically senior peer. No communication or stakeholder questions appear in this assessment.
+- Precision over length. A concise, specific answer outscores a verbose one.
+ 
+## Platform-agnostic
+Describe mechanisms, contracts, and architectural properties — not specific products or languages. Naming a tool to make a point concrete is fine; your reasoning must not depend on it.
+
+Scenario
+Read in full before answering
+All information needed to answer every question is on this page.
+
+## Platform context
+Lattice is a B2B SaaS platform with 600 tenants on a shared-infrastructure model. All tenants share the same compute pool, job queue, and database cluster. There are no per-tenant resource limits, no workload priority classes, and no tenant-attributed resource monitoring.
+
+## Architecture
+- Single job queue. One priority level. FIFO dispatch.
+- Worker pool: 40 nodes, shared across all tenants.
+- Database: shared cluster, no per-tenant connection limits or query quotas.
+- Autoscaler: triggers at 80% average worker CPU. Adds nodes in batches of - Spin-up time: ~4 min.
+- Monitoring: fleet-level CPU, queue depth, and error rate. No tenant-attributed metrics.
+- Alert: global CPU >90% for >2 min. No queue-saturation or per-tenant alert.
+ 
+## The incident
+Saturday 02:14 AM: The platform became unresponsive for all 600 tenants for 23 minutes. Root cause: Tenant A ran a scheduled data-export job that consumed the entire worker pool. The job was legitimate and permitted by the ToS.
+ 
+## Tenant A profile
+- 22% of platform ARR.
+- Job: 4.2 M record export, runs weekly.
+- Normally scheduled: 02:14 PM. This run: 02:14 AM (timezone misconfiguration on their side).
+- Job spawned 38 parallel worker tasks — saturating 95% of the fleet.
+- Interactive requests from all other tenants queued behind the export tasks for the full 23 minutes.
+
+## Incident data
+What did not exist at incident time
+-   Per-tenant queue visibility or task attribution.
+-    Workload classification (interactive vs batch).
+-    Per-tenant CPU or worker consumption metrics.
+-    Queue saturation alert (only global CPU was monitored).
+-    Capacity reservation for interactive traffic.
+ 
+## Constraints you must design within
+1. Existing tenants must not change how they submit work — no client-side changes permitted.
+2. Tenant A's weekly export is a legitimate and contractually permitted workload.
+3. Any new isolation mechanism must be implementable without migrating to a per-tenant database or compute cluster.
+4. The autoscaler behaviour is fixed — spin-up takes ~4 minutes.
+5. You may add new queue infrastructure but cannot replace the existing one in a single release. 
+
+<br>
+
 # Question 1
 The post-incident report frames this as 'Tenant A scheduled a job at the wrong time. Explain precisely why that framing is incorrect. Then enumerate every design property of the current architecture that was required to be present for a single tenant's legitimate workload to cause a platform-wide outage. For each property, state whether it is a missing control, an absent signal, or a flawed assumption baked into the original design.
 Structured list. Each property must be classified as: missing control / absent signal / flawed assumption.
